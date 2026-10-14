@@ -1,14 +1,18 @@
 <script>
+import { useAppStore } from '@/store/index.js'
+
 export default {
-  onLaunch: function () {
-    console.log('App Launch')
-  },
-  onShow: function () {
-    console.log('App Show')
-  },
-  onHide: function () {
-    console.log('App Hide')
-  },
+	onLaunch: function () {
+		const store = useAppStore()
+		store.initData()
+		console.log('App Launch')
+	},
+	onShow: function () {
+		console.log('App Show')
+	},
+	onHide: function () {
+		console.log('App Hide')
+	},
 }
 </script>
 

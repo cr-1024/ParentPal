@@ -9,40 +9,53 @@
 
 		<!-- ==================== 睡眠 ==================== -->
 		<view v-if="store.activeRecordTab === 'sleep'">
-			<view class="card sleep-card">
-				<view class="sleep-label">哄睡提醒 · 清醒间隔</view>
-				<view class="sleep-timer">2 : 10 : 35</view>
-				<view class="sleep-sub">5 月龄建议清醒 2-2.5 小时，即将超时</view>
-				<view class="btn-primary purple">开始记录睡眠</view>
-			</view>
-			<view class="card">
-				<view class="kv"><text>今日总睡眠</text><text class="b">10.5 小时</text></view>
-				<view class="kv"><text>白天小睡</text><text class="b">3 次 · 3.2 小时</text></view>
-				<view class="kv"><text>夜间睡眠</text><text class="b">21:00 – 06:30 · 9.5 小时</text></view>
-				<view class="kv"><text>夜醒</text><text class="b">2 次</text></view>
-				<view class="bars">
-					<view class="bar" style="height: 52%;" v-for="(d, i) in week" :key="i">
-						<text class="bar-label">{{ d.day }}</text>
-						<text class="bar-val">{{ d.hours }}h</text>
+			<!-- 进行中的睡眠记录 -->
+			<view class="card sleep-card recording" v-if="store.activeSleep">
+				<view class="sleep-label">正在记录睡眠 · 入睡 {{ fmtTime(store.activeSleep.startTs) }}</view>
+				<view class="sleep-timer">{{ elapsedText }}</view>
+				<view class="night-wakes">
+					<text class="nw-label">夜醒次数</text>
+					<view class="stepper">
+						<view class="step-btn" @click="nightWakes = Math.max(0, nightWakes - 1)">−</view>
+						<text class="step-val">{{ nightWakes }}</text>
+						<view class="step-btn" @click="nightWakes = nightWakes + 1">＋</view>
 					</view>
 				</view>
+				<view class="btn-primary purple" @click="stopSleep">醒来，保存记录</view>
 			</view>
-			<view class="card">
-				<view class="sec-title">💡 本月建议</view>
-				<view class="advice-text">5-8 月龄推荐每天 <text class="b">12-15 小时</text>睡眠（含小睡 2-3 次）。当前总量略低于推荐，可尝试将晚间入睡提前至 20:00。</view>
-				<view class="note">* 建议参考 NSF 睡眠指南，不构成医疗意见</view>
+			<!-- 未开始 -->
+			<view class="card sleep-card" v-else>
+				<view class="sleep-label">哄睡提醒 · 清醒间隔</view>
+				<view class="sleep-timer" v-if="awakeText">{{ awakeText }}</view>
+				<view class="sleep-timer" v-else>--:--:--</view>
+				<view class="sleep-sub">5 月龄建议清醒 2-2.5 小时{{ awakeOver ? '，已超时，尽快哄睡' : '' }}</view>
+				<view class="btn-primary purple" @click="startSleep">开始记录睡眠</view>
 			</view>
+
+			<!-- 近 7 天统计 -->
 			<view class="card">
-				<view class="sec-title">今日记录</view>
-				<view class="rec-row">
-					<text class="rec-time">12:30–14:00</text>
-					<view class="rec-main"><text class="b">小睡 1.5 小时</text> · 抱睡入睡</view>
-					<text class="rec-tag">白天</text>
+				<view class="sec-title">近 7 天睡眠时长</view>
+				<view class="bars" v-if="weekStats.some(d => d.hours > 0)">
+					<view class="bar" v-for="(d, i) in weekStats" :key="i" :style="{ height: (d.hours / 15 * 100) + '%' }">
+						<text class="bar-val" v-if="d.hours > 0">{{ d.hours.toFixed(1) }}</text>
+						<text class="bar-label">{{ d.day }}</text>
+					</view>
 				</view>
-				<view class="rec-row">
-					<text class="rec-time">20:05–今 06:30</text>
-					<view class="rec-main"><text class="b">夜间 9.5 小时</text> · 夜醒 2 次</view>
-					<text class="rec-tag">夜醒 40 分钟</text>
+				<view class="empty-inline" v-else>还没有睡眠记录，从今晚开始吧</view>
+			</view>
+
+			<!-- 今日记录 -->
+			<view class="card">
+				<view class="sec-title">今日记录（{{ store.todaySleeps.length }}）</view>
+				<view class="empty-inline" v-if="!store.todaySleeps.length">今天还没有睡眠记录</view>
+				<view class="rec-row" v-for="r in store.todaySleeps" :key="r.id">
+					<text class="rec-time">{{ fmtTime(r.start) }}–{{ r.end ? fmtTime(r.end) : '进行中' }}</text>
+					<view class="rec-main">
+						<text class="b">{{ r.end ? fmtDuration(r.start, r.end) : '记录中' }}</text>
+						<text class="rec-note" v-if="r.method">· {{ r.method }}</text>
+						<text class="rec-note" v-if="r.nightWakes">· 夜醒 {{ r.nightWakes }} 次</text>
+					</view>
+					<text class="rec-del" @click="removeSleep(r.id)">✕</text>
 				</view>
 			</view>
 		</view>
@@ -51,49 +64,46 @@
 		<view v-if="store.activeRecordTab === 'feed'">
 			<view class="card">
 				<view class="sec-title">快速记录</view>
-				<view class="quick">
-					<view class="qbtn">🤱 母乳<text class="qsub">计时开始</text></view>
-					<view class="qbtn alt">🍼 奶粉<text class="qsub">输入奶量</text></view>
-				</view>
-				<view class="kv"><text>距上次喂奶</text><text class="b">3 : 20 : 05</text></view>
-				<view class="kv"><text>提醒间隔（5 月龄默认）</text><text class="b">3.5 小时</text></view>
+				<!-- 计时中 -->
+				<template v-if="store.feedingTimer.running">
+					<view class="feeding-timer">
+						<text class="ft-label">母乳计时中（{{ store.feedingTimer.side === 'left' ? '左侧' : '右侧' }}）</text>
+						<text class="ft-time">{{ elapsedText }}</text>
+					</view>
+					<view class="btn-primary" @click="stopFeeding">停止并保存</view>
+				</template>
+				<!-- 未计时 -->
+				<template v-else>
+					<view class="quick">
+						<view class="qbtn" @click="startFeeding('left')">🤱 左侧<text class="qsub">计时开始</text></view>
+						<view class="qbtn" @click="startFeeding('right')">🤱 右侧<text class="qsub">计时开始</text></view>
+						<view class="qbtn alt" @click="openFormulaModal">🍼 奶粉<text class="qsub">输入奶量</text></view>
+					</view>
+				</template>
+				<view class="kv"><text>距上次喂奶</text><text class="b">{{ lastFeedText }}</text></view>
+				<view class="kv"><text>提醒间隔（按月龄）</text><text class="b">{{ feedIntervalText }}</text></view>
 			</view>
+
 			<view class="card">
 				<view class="sec-title">今日汇总</view>
 				<view class="grid">
-					<view class="stat"><view class="t">喂养次数</view><view class="v">5 次</view></view>
-					<view class="stat"><view class="t">总奶量</view><view class="v">780 <text class="u">ml</text></view></view>
+					<view class="stat"><view class="t">喂养次数</view><view class="v">{{ store.todayStats.feedCount }} 次</view></view>
+					<view class="stat"><view class="t">总奶量</view><view class="v">{{ store.todayStats.feedVolume }} <text class="u">ml</text></view></view>
 				</view>
 			</view>
+
 			<view class="card">
-				<view class="sec-title">今日记录</view>
-				<view class="rec-row">
-					<text class="rec-time">06:30</text>
-					<view class="rec-main"><text class="b">母乳 · 左侧</text> 12 分钟</view>
-					<text class="rec-tag">晨奶</text>
-				</view>
-				<view class="rec-row">
-					<text class="rec-time">10:00</text>
-					<view class="rec-main"><text class="b">奶粉</text> 150 ml</view>
-					<text class="rec-tag">2 段</text>
-				</view>
-				<view class="rec-row">
-					<text class="rec-time">13:30</text>
-					<view class="rec-main"><text class="b">母乳 · 双侧</text> 24 分钟</view>
-					<text class="rec-tag">辅食后</text>
-				</view>
-				<view class="rec-row">
-					<text class="rec-time">17:00</text>
-					<view class="rec-main"><text class="b">奶粉</text> 180 ml</view>
-					<text class="rec-tag warn">剩 30 ml</text>
-				</view>
-				<view class="rec-row">
-					<text class="rec-time">21:00</text>
-					<view class="rec-main"><text class="b">母乳 · 右侧</text> 15 分钟</view>
-					<text class="rec-tag">睡前奶</text>
+				<view class="sec-title">今日记录（{{ store.todayFeeds.length }}）</view>
+				<view class="empty-inline" v-if="!store.todayFeeds.length">今天还没有喂奶记录</view>
+				<view class="rec-row" v-for="r in store.todayFeeds" :key="r.id">
+					<text class="rec-time">{{ fmtTime(r.time) }}</text>
+					<view class="rec-main">
+						<text class="b">{{ r.type === 'breast' ? `母乳 · ${r.side === 'left' ? '左侧' : '右侧'}` : '奶粉' }}</text>
+						<text class="rec-note">{{ r.type === 'breast' ? ` ${r.breastMinutes} 分钟` : ` ${r.volumeMl} ml` }}</text>
+					</view>
+					<text class="rec-del" @click="removeFeeding(r.id)">✕</text>
 				</view>
 			</view>
-			<view class="note center">💡 5 月龄约每 3.5 小时一喂，每日总量约 750-900 ml</view>
 		</view>
 
 		<!-- ==================== 便便 ==================== -->
@@ -107,23 +117,42 @@
 				<view class="chips">
 					<view v-for="(a, i) in amounts" :key="i" :class="['chip', { on: selectedAmount === a }]" @click="selectedAmount = a">{{ a }}</view>
 				</view>
+				<view class="sec-title mt">备注</view>
+				<input class="note-input" v-model="stoolNote" placeholder="选填，如：刚转 2 段奶粉" />
 				<view class="btn-primary" @click="saveStool">保存记录</view>
 			</view>
+
 			<view class="card">
-				<view class="sec-title">今日记录 · 2 次</view>
-				<view class="rec-row">
-					<text class="rec-time">08:30</text>
-					<view class="rec-main"><text class="b">金黄糊状</text> · 中量</view>
-					<text class="rec-tag">正常</text>
-				</view>
-				<view class="rec-row">
-					<text class="rec-time">14:20</text>
-					<view class="rec-main"><text class="b">奶瓣</text> · 少量<text class="rec-note">备注：今天刚转 2 段奶粉</text></view>
-					<text class="rec-tag warn">观察</text>
+				<view class="sec-title">今日记录（{{ store.todayStools.length }}）</view>
+				<view class="empty-inline" v-if="!store.todayStools.length">今天还没有排便记录</view>
+				<view class="rec-row" v-for="r in store.todayStools" :key="r.id">
+					<text class="rec-time">{{ fmtTime(r.time) }}</text>
+					<view class="rec-main">
+						<text class="b">{{ r.trait }}</text> · {{ r.amount }}
+						<text class="rec-note" v-if="r.note">备注：{{ r.note }}</text>
+					</view>
+					<text class="rec-del" @click="removeStool(r.id)">✕</text>
 				</view>
 			</view>
-			<view class="card stool-tip">
-				<view class="stool-tip-text">💡 <text class="b">小提示</text>：转奶期出现少量奶瓣较常见。若持续超过 3 天、伴奶量下降或血丝，建议就医。</view>
+
+			<view class="card stool-tip" v-if="abnormalTip">
+				<view class="stool-tip-text">💡 <text class="b">小提示</text>：{{ abnormalTip }}。若持续超过 3 天、伴奶量下降或血丝，建议就医。</view>
+			</view>
+		</view>
+
+		<!-- 奶粉奶量输入弹窗 -->
+		<view class="modal-mask" v-if="showFormulaModal" @click="showFormulaModal = false">
+			<view class="modal" @click.stop>
+				<view class="modal-title">记录奶粉</view>
+				<view class="field">
+					<text class="field-label">奶量</text>
+					<input class="field-input" type="number" v-model="formulaMl" placeholder="ml" focus />
+					<text class="field-unit">ml</text>
+				</view>
+				<view class="modal-btns">
+					<view class="modal-btn cancel" @click="showFormulaModal = false">取消</view>
+					<view class="modal-btn confirm" @click="saveFormula">保存</view>
+				</view>
 			</view>
 		</view>
 	</view>
@@ -131,36 +160,171 @@
 
 <script>
 import { useAppStore } from '@/store/index.js'
+import { feedIntervalHours, awakeWindowHours, getLastSleepEnd } from '@/utils/reminder.js'
+import { fmtTime, diffMinutes, startOfToday } from '@/utils/date.js'
 
 export default {
 	data() {
 		return {
-			week: [
-				{ day: '周一', hours: 9.8 },
-				{ day: '周二', hours: 11.2 },
-				{ day: '周三', hours: 9.1 },
-				{ day: '周四', hours: 12.3 },
-				{ day: '周五', hours: 10.9 },
-				{ day: '周六', hours: 13.1 },
-				{ day: '今天', hours: 10.5 }
-			],
+			nowTick: Date.now(),
+			nightWakes: 0,
 			traits: ['金黄糊状', '黄色软膏', '奶瓣', '绿色', '稀水样', '泡沫', '干硬', '黏液', '血丝'],
 			amounts: ['少量', '中量', '多量'],
 			selectedTrait: '黄色软膏',
-			selectedAmount: '中量'
+			selectedAmount: '中量',
+			stoolNote: '',
+			showFormulaModal: false,
+			formulaMl: ''
 		}
 	},
 	computed: {
 		store() {
 			return useAppStore()
+		},
+		elapsedText() {
+			const start = this.store.activeSleep
+				? this.store.activeSleep.startTs
+				: (this.store.feedingTimer.running ? this.store.feedingTimer.startTs : null)
+			if (!start) return ''
+			const sec = Math.max(0, Math.floor((this.nowTick - start) / 1000))
+			const h = String(Math.floor(sec / 3600)).padStart(2, '0')
+			const m = String(Math.floor((sec % 3600) / 60)).padStart(2, '0')
+			const s = String(sec % 60).padStart(2, '0')
+			return `${h}:${m}:${s}`
+		},
+		awakeText() {
+			const lastEnd = getLastSleepEnd(this.store.sleepRecords)
+			if (!lastEnd) return ''
+			const min = diffMinutes(lastEnd, Date.now())
+			const h = String(Math.floor(min / 60)).padStart(2, '0')
+			const m = String(min % 60).padStart(2, '0')
+			return `${h}:${m}`
+		},
+		awakeOver() {
+			const lastEnd = getLastSleepEnd(this.store.sleepRecords)
+			if (!lastEnd) return false
+			return diffMinutes(lastEnd, Date.now()) >= awakeWindowHours(this.store.baby.birthday) * 60
+		},
+		feedIntervalText() {
+			return feedIntervalHours(this.store.baby.birthday) + ' 小时'
+		},
+		lastFeedText() {
+			const list = this.store.feedingRecords
+			if (!list.length) return '暂无记录'
+			const min = diffMinutes(list[list.length - 1].time, Date.now())
+			if (min < 60) return `${min} 分钟`
+			return `${Math.floor(min / 60)} 小时 ${min % 60} 分钟`
+		},
+		weekStats() {
+			const today = startOfToday()
+			const days = []
+			for (let i = 6; i >= 0; i--) {
+				const dayStart = today - i * 86400000
+				const dayEnd = dayStart + 86400000
+				const minutes = this.store.sleepRecords
+					.filter((r) => r.start >= dayStart && r.start < dayEnd && r.end)
+					.reduce((sum, r) => sum + diffMinutes(r.start, r.end), 0)
+				const d = new Date(dayStart)
+				days.push({ day: i === 0 ? '今天' : ['日', '一', '二', '三', '四', '五', '六'][d.getDay()], hours: minutes / 60 })
+			}
+			return days
+		},
+		abnormalTip() {
+			const recent = this.store.stoolRecords.slice(-3)
+			if (!recent.length) return ''
+			const hasAbnormal = recent.some((r) => ['稀水样', '血丝', '黏液', '绿色'].includes(r.trait))
+			if (hasAbnormal) return '近期出现异常性状，建议观察记录'
+			return ''
 		}
+	},
+	watch: {
+		'store.activeSleep'() {
+			this.toggleTicker()
+		},
+		'store.feedingTimer.running'() {
+			this.toggleTicker()
+		}
+	},
+	mounted() {
+		this.store.initData()
+		this.toggleTicker()
+	},
+	onUnload() {
+		if (this._ticker) clearInterval(this._ticker)
 	},
 	methods: {
 		switchTab(tab) {
-			this.store.setActiveRecordTab(tab)
+			this.store.switchRecordTab(tab)
 		},
+		toggleTicker() {
+			const running = !!(this.store.activeSleep || this.store.feedingTimer.running)
+			if (this._ticker) {
+				clearInterval(this._ticker)
+				this._ticker = null
+			}
+			if (running) {
+				this._ticker = setInterval(() => {
+					this.nowTick = Date.now()
+				}, 1000)
+			}
+		},
+		fmtTime(ts) {
+			return fmtTime(new Date(ts))
+		},
+		fmtDuration(start, end) {
+			const min = diffMinutes(start, end)
+			const h = Math.floor(min / 60)
+			const m = min % 60
+			return h > 0 ? `${h} 小时 ${m} 分钟` : `${m} 分钟`
+		},
+		// 睡眠
+		startSleep() {
+			this.nightWakes = 0
+			this.store.startSleep()
+			this.toggleTicker()
+		},
+		stopSleep() {
+			this.store.stopSleep({ nightWakes: this.nightWakes })
+			this.toggleTicker()
+			uni.showToast({ title: '已保存睡眠记录', icon: 'success' })
+		},
+		removeSleep(id) {
+			this.store.removeSleep(id)
+		},
+		// 喂奶
+		startFeeding(side) {
+			this.store.startFeeding(side)
+			this.toggleTicker()
+		},
+		stopFeeding() {
+			const r = this.store.stopBreastFeeding()
+			this.toggleTicker()
+			uni.showToast({ title: `已记录 ${r.breastMinutes} 分钟`, icon: 'success' })
+		},
+		openFormulaModal() {
+			this.formulaMl = ''
+			this.showFormulaModal = true
+		},
+		saveFormula() {
+			if (!this.formulaMl || Number(this.formulaMl) <= 0) {
+				uni.showToast({ title: '请输入奶量', icon: 'none' })
+				return
+			}
+			this.store.addFormulaFeeding(this.formulaMl)
+			this.showFormulaModal = false
+			uni.showToast({ title: `已记录 ${this.formulaMl} ml`, icon: 'success' })
+		},
+		removeFeeding(id) {
+			this.store.removeFeeding(id)
+		},
+		// 便便
 		saveStool() {
-			uni.showToast({ title: `已记录：${this.selectedTrait} · ${this.selectedAmount}（演示）`, icon: 'none' })
+			this.store.addStool({ trait: this.selectedTrait, amount: this.selectedAmount, note: this.stoolNote })
+			this.stoolNote = ''
+			uni.showToast({ title: '已保存排便记录', icon: 'success' })
+		},
+		removeStool(id) {
+			this.store.removeStool(id)
 		}
 	}
 }
@@ -241,6 +405,46 @@ export default {
 		color: #8A7C71;
 	}
 
+	.night-wakes {
+		display: flex;
+		align-items: center;
+		margin: 20rpx 0 4rpx;
+	}
+
+	.nw-label {
+		font-size: 24rpx;
+		color: #6B5D52;
+		margin-right: 20rpx;
+	}
+
+	.stepper {
+		display: flex;
+		align-items: center;
+		background: #fff;
+		border-radius: 40rpx;
+		padding: 6rpx 12rpx;
+	}
+
+	.step-btn {
+		width: 48rpx;
+		height: 48rpx;
+		line-height: 48rpx;
+		text-align: center;
+		border-radius: 50%;
+		background: #EFEBFA;
+		color: #7E6BC4;
+		font-size: 30rpx;
+		font-weight: 700;
+	}
+
+	.step-val {
+		min-width: 60rpx;
+		text-align: center;
+		font-size: 30rpx;
+		font-weight: 700;
+		color: #3D3129;
+	}
+
 	.btn-primary {
 		background: #FF8A65;
 		color: #fff;
@@ -284,6 +488,7 @@ export default {
 		border-radius: 14rpx 14rpx 6rpx 6rpx;
 		position: relative;
 		margin: 0 10rpx;
+		min-height: 6rpx;
 	}
 
 	.bar:last-child {
@@ -308,28 +513,11 @@ export default {
 		color: #B5A79C;
 	}
 
-	.advice-text {
-		font-size: 26rpx;
-		line-height: 1.7;
-		color: #6B5D52;
-	}
-
-	.advice-text .b {
-		font-weight: 600;
-		color: #3D3129;
-	}
-
-	.note {
-		font-size: 22rpx;
-		color: #B5A79C;
-		line-height: 1.6;
-		margin-top: 12rpx;
-	}
-
-	.note.center {
+	.empty-inline {
+		font-size: 24rpx;
+		color: #C9BCB2;
 		text-align: center;
-		display: block;
-		margin-bottom: 28rpx;
+		padding: 24rpx 0;
 	}
 
 	/* 喂奶 */
@@ -345,7 +533,7 @@ export default {
 		border-radius: 28rpx;
 		padding: 24rpx 0;
 		text-align: center;
-		font-size: 28rpx;
+		font-size: 26rpx;
 		font-weight: 600;
 		box-shadow: 0 8rpx 28rpx rgba(255, 138, 101, 0.35);
 	}
@@ -358,7 +546,7 @@ export default {
 	}
 
 	.qbtn + .qbtn {
-		margin-left: 24rpx;
+		margin-left: 16rpx;
 	}
 
 	.qsub {
@@ -367,6 +555,28 @@ export default {
 		font-weight: 400;
 		opacity: 0.75;
 		margin-top: 4rpx;
+	}
+
+	.feeding-timer {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		background: #FFF3EC;
+		border-radius: 24rpx;
+		padding: 24rpx 28rpx;
+		margin: 16rpx 0 8rpx;
+	}
+
+	.ft-label {
+		font-size: 24rpx;
+		color: #FF7043;
+		font-weight: 600;
+	}
+
+	.ft-time {
+		font-size: 48rpx;
+		font-weight: 700;
+		color: #FF7043;
 	}
 
 	.grid {
@@ -425,24 +635,14 @@ export default {
 	}
 
 	.rec-note {
-		display: block;
-		font-size: 20rpx;
-		color: #B5A79C;
-		margin-top: 4rpx;
+		font-size: 22rpx;
+		color: #A0938A;
 	}
 
-	.rec-tag {
-		font-size: 20rpx;
-		padding: 6rpx 16rpx;
-		border-radius: 30rpx;
-		background: #F5EEE6;
-		color: #8A7C71;
-		white-space: nowrap;
-	}
-
-	.rec-tag.warn {
-		background: #FFF3E0;
-		color: #E65100;
+	.rec-del {
+		color: #D8CCC2;
+		font-size: 26rpx;
+		padding: 12rpx;
 	}
 
 	/* 便便 */
@@ -466,6 +666,14 @@ export default {
 		font-weight: 600;
 	}
 
+	.note-input {
+		background: #FAF6F0;
+		border-radius: 16rpx;
+		padding: 18rpx 24rpx;
+		font-size: 24rpx;
+		margin-top: 8rpx;
+	}
+
 	.stool-tip {
 		background: #FFF8F0;
 		border: 3rpx dashed #FFCCB0;
@@ -479,5 +687,83 @@ export default {
 
 	.stool-tip-text .b {
 		font-weight: 600;
+	}
+
+	/* 弹窗 */
+	.modal-mask {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: rgba(61, 49, 41, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 999;
+	}
+
+	.modal {
+		width: 620rpx;
+		background: #fff;
+		border-radius: 36rpx;
+		padding: 40rpx;
+	}
+
+	.modal-title {
+		font-size: 32rpx;
+		font-weight: 700;
+		color: #3D3129;
+		margin-bottom: 28rpx;
+	}
+
+	.field {
+		display: flex;
+		align-items: center;
+		margin-bottom: 24rpx;
+	}
+
+	.field-label {
+		width: 120rpx;
+		font-size: 26rpx;
+		color: #8A7C71;
+	}
+
+	.field-input {
+		flex: 1;
+		background: #FAF6F0;
+		border-radius: 16rpx;
+		padding: 18rpx 24rpx;
+		font-size: 30rpx;
+	}
+
+	.field-unit {
+		font-size: 26rpx;
+		color: #8A7C71;
+		margin-left: 16rpx;
+	}
+
+	.modal-btns {
+		display: flex;
+	}
+
+	.modal-btn {
+		flex: 1;
+		text-align: center;
+		padding: 22rpx 0;
+		border-radius: 24rpx;
+		font-size: 28rpx;
+		font-weight: 600;
+	}
+
+	.modal-btn.cancel {
+		background: #F5EEE6;
+		color: #8A7C71;
+		margin-right: 20rpx;
+	}
+
+	.modal-btn.confirm {
+		background: #FF8A65;
+		color: #fff;
 	}
 </style>

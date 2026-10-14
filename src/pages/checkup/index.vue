@@ -3,27 +3,33 @@
 		<view class="page-title">发育体检<text class="sub">0-3 岁全周期计划</text></view>
 
 		<!-- 下次体检 -->
-		<view class="card next-card">
+		<view class="card next-card" v-if="next">
 			<view class="next-head">
 				<view>
-					<view class="next-label">下次体检</view>
-					<view class="next-title">6 月龄体检</view>
-					<view class="next-date">2026-11-01 · 倒计时 18 天</view>
+					<view class="next-label">下次体检{{ nextState && nextState.status === 'booked' ? ' · 已预约' : '' }}</view>
+					<view class="next-title">{{ next.label }}</view>
+					<view class="next-date">{{ next.date }} · {{ next.daysAway >= 0 ? `倒计时 ${next.daysAway} 天` : `已超期 ${-next.daysAway} 天` }}</view>
 				</view>
 				<view class="next-icon">💉</view>
 			</view>
-			<view class="btn-primary" @click="goCheckupDetail">查看本次检查项目（8 项）</view>
-			<view class="btn-outline">标记为已预约</view>
+			<view class="btn-primary" @click="toggleScope">{{ showScope ? '收起检查项目' : `查看本次检查项目（${next.items.length} 项）` }}</view>
+			<view class="btn-outline" v-if="!nextState || nextState.status !== 'booked'" @click="markBooked">标记为已预约</view>
+			<view class="btn-outline done" v-else @click="markDone(next.key)">本次已完成</view>
+
+			<!-- 检查项目详情 -->
+			<view class="scope-detail" v-if="showScope">
+				<view class="detail-title">检查范围</view>
+				<view class="detail-item" v-for="(s, i) in next.scope" :key="i">· {{ s }}</view>
+				<view class="detail-title mt">考察项目（家长自查预习）</view>
+				<view class="detail-item" v-for="(it, i) in next.items" :key="i">☐ {{ it }}</view>
+				<view class="detail-extra" v-if="next.extra">💡 {{ next.extra }}</view>
+				<view class="note">* 具体项目按当地社区医院与医嘱执行，提前 7 天 / 1 天提醒</view>
+			</view>
 		</view>
 
-		<!-- 检查范围 -->
-		<view class="card">
-			<view class="sec-title">本次体检范围</view>
-			<view class="scope-row"><text class="scope-icon">📏</text><text class="scope-main">体格测量：身长 · 体重 · 头围</text></view>
-			<view class="scope-row"><text class="scope-icon">🩺</text><text class="scope-main">体格检查：皮肤 · 心肺 · 腹部 · 髋关节</text></view>
-			<view class="scope-row"><text class="scope-icon">🧩</text><text class="scope-main">发育评估：大运动 / 精细 / 语言 / 社交</text></view>
-			<view class="scope-row"><text class="scope-icon">🍽️</text><text class="scope-main">营养与喂养指导 · 辅食添加建议</text></view>
-			<view class="note">* 具体项目按当地社区医院与医嘱执行，提前 7 天 / 1 天提醒</view>
+		<view class="card empty" v-else>
+			<view class="empty-emoji">🎉</view>
+			<view class="empty-text">0-3 岁体检计划已全部完成</view>
 		</view>
 
 		<!-- 成长曲线（图表库接入点） -->
@@ -33,34 +39,93 @@
 				<text class="chart-emoji">📈</text>
 				<text class="chart-tip">ucharts 成长曲线接入点</text>
 			</view>
-			<view class="chart-desc">当前 7.2 kg · 处于同月龄中位水平</view>
+			<view class="chart-desc">在体检结果中记录身长体重后绘制</view>
 		</view>
 
 		<!-- 体检时间轴 -->
 		<view class="card">
-			<view class="sec-title">体检时间轴</view>
+			<view class="sec-title">体检时间轴（点击更新状态）</view>
 			<view class="tl">
-				<view class="tl-item done"><text class="tl-name">新生儿访视</text><text class="tl-state">✔ 已完成</text></view>
-				<view class="tl-item done"><text class="tl-name">满月体检</text><text class="tl-state">✔ 已完成</text></view>
-				<view class="tl-item done"><text class="tl-name">3 月龄</text><text class="tl-state">✔ 已完成</text></view>
-				<view class="tl-item next"><text class="tl-name">6 月龄</text><text class="tl-state">18 天后</text></view>
-				<view class="tl-item"><text class="tl-name">8 月龄</text><text class="tl-state">未到</text></view>
-				<view class="tl-item"><text class="tl-name">12 月龄</text><text class="tl-state">未到</text></view>
-				<view class="tl-item"><text class="tl-name">18 月龄</text><text class="tl-state">未到</text></view>
-				<view class="tl-item"><text class="tl-name">24 / 30 / 36 月龄</text><text class="tl-state">未到</text></view>
+				<view class="tl-item" v-for="s in plan" :key="s.key"
+					:class="{ done: stateOf(s.key) && stateOf(s.key).status === 'done', skipped: stateOf(s.key) && stateOf(s.key).status === 'skipped', next: next && s.key === next.key }"
+					@click="openStageActions(s)">
+					<text class="tl-name">{{ s.label }}</text>
+					<text class="tl-state">{{ stateText(s) }}</text>
+				</view>
 			</view>
 		</view>
 	</view>
 </template>
 
 <script>
+import { useAppStore } from '@/store/index.js'
+
 export default {
 	data() {
-		return {}
+		return {
+			showScope: false
+		}
+	},
+	computed: {
+		appStore() {
+			return useAppStore()
+		},
+		plan() {
+			return this.appStore.checkupPlan
+		},
+		next() {
+			return this.appStore.nextCheckup
+		},
+		nextState() {
+			return this.next ? this.appStore.checkupStates[this.next.key] : null
+		}
+	},
+	onShow() {
+		this.appStore.initData()
 	},
 	methods: {
-		goCheckupDetail() {
-			uni.showToast({ title: '检查项目详情页（M1 建设）', icon: 'none' })
+		stateOf(key) {
+			return this.appStore.checkupStates[key]
+		},
+		stateText(s) {
+			const st = this.appStore.checkupStates[s.key]
+			if (!st) return this.next && s.key === this.next.key ? '待体检' : '未到'
+			if (st.status === 'done') return '✔ 已完成'
+			if (st.status === 'booked') return '已预约'
+			if (st.status === 'skipped') return '已跳过'
+			return '未到'
+		},
+		toggleScope() {
+			this.showScope = !this.showScope
+		},
+		markBooked() {
+			this.appStore.setCheckupState(this.next.key, { status: 'booked', date: this.next.date, note: '' })
+			uni.showToast({ title: '已标记预约', icon: 'success' })
+		},
+		markDone(key) {
+			this.appStore.setCheckupState(key, { status: 'done', date: new Date().toISOString().slice(0, 10), note: '' })
+			uni.showToast({ title: '已完成', icon: 'success' })
+		},
+		openStageActions(s) {
+			const st = this.appStore.checkupStates[s.key]
+			const itemList = ['标记为已预约', '标记为已完成', '标记为已跳过']
+			if (st && st.status !== 'done') itemList.push('清除状态')
+			uni.showActionSheet({
+				itemList,
+				success: (res) => {
+					const idx = res.tapIndex
+					if (idx === 0) {
+						this.appStore.setCheckupState(s.key, { status: 'booked', date: s.date, note: '' })
+					} else if (idx === 1) {
+						this.appStore.setCheckupState(s.key, { status: 'done', date: new Date().toISOString().slice(0, 10), note: '' })
+					} else if (idx === 2) {
+						this.appStore.setCheckupState(s.key, { status: 'skipped', date: s.date, note: '' })
+					} else if (idx === 3) {
+						this.appStore.removeCheckupState(s.key)
+					}
+					uni.showToast({ title: '已更新', icon: 'success' })
+				}
+			})
 		}
 	}
 }
@@ -155,6 +220,50 @@ export default {
 		margin-top: 20rpx;
 	}
 
+	.btn-outline.done {
+		background: #7BC47F;
+		border-color: #7BC47F;
+		color: #fff;
+	}
+
+	.scope-detail {
+		background: rgba(255, 255, 255, 0.75);
+		border-radius: 24rpx;
+		padding: 24rpx 28rpx;
+		margin-top: 24rpx;
+	}
+
+	.detail-title {
+		font-size: 26rpx;
+		font-weight: 700;
+		color: #9C6B4E;
+		margin-bottom: 8rpx;
+	}
+
+	.detail-title.mt {
+		margin-top: 20rpx;
+	}
+
+	.detail-item {
+		font-size: 24rpx;
+		color: #6B5D52;
+		line-height: 1.7;
+	}
+
+	.detail-extra {
+		font-size: 22rpx;
+		color: #C68B5E;
+		margin-top: 16rpx;
+		line-height: 1.6;
+	}
+
+	.note {
+		font-size: 22rpx;
+		color: #B5A79C;
+		line-height: 1.6;
+		margin-top: 16rpx;
+	}
+
 	.sec-title {
 		font-size: 30rpx;
 		font-weight: 700;
@@ -162,23 +271,20 @@ export default {
 		margin-bottom: 12rpx;
 	}
 
-	.scope-row {
+	.empty {
 		display: flex;
+		flex-direction: column;
 		align-items: center;
-		font-size: 26rpx;
-		color: #3D3129;
-		padding: 14rpx 0;
+		padding: 48rpx 32rpx;
 	}
 
-	.scope-icon {
-		width: 44rpx;
-		margin-right: 20rpx;
+	.empty-emoji {
+		font-size: 56rpx;
 	}
 
-	.note {
-		font-size: 22rpx;
-		color: #B5A79C;
-		line-height: 1.6;
+	.empty-text {
+		font-size: 24rpx;
+		color: #A0938A;
 		margin-top: 12rpx;
 	}
 
@@ -246,6 +352,10 @@ export default {
 
 	.tl-item.done::before {
 		background: #7BC47F;
+	}
+
+	.tl-item.skipped::before {
+		background: #D8CCC2;
 	}
 
 	.tl-item.next::before {
