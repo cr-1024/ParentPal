@@ -1,6 +1,13 @@
 {
 	"pages": [
 		{
+			"path": "pages/onboarding/index",
+			"style": {
+				"navigationBarTitleText": "欢迎",
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/index/index",
 			"style": {
 				"navigationBarTitleText": "ParentPal"

@@ -32,14 +32,11 @@
 				<view class="btn-primary purple" @click="startSleep">开始记录睡眠</view>
 			</view>
 
-			<!-- 近 7 天统计 -->
+			<!-- 近 7 天统计（ucharts） -->
 			<view class="card">
-				<view class="sec-title">近 7 天睡眠时长</view>
-				<view class="bars" v-if="weekStats.some(d => d.hours > 0)">
-					<view class="bar" v-for="(d, i) in weekStats" :key="i" :style="{ height: (d.hours / 15 * 100) + '%' }">
-						<text class="bar-val" v-if="d.hours > 0">{{ d.hours.toFixed(1) }}</text>
-						<text class="bar-label">{{ d.day }}</text>
-					</view>
+				<view class="sec-title">近 7 天睡眠时长（小时）</view>
+				<view class="chart-box" v-if="weekStats.some(d => d.hours > 0)">
+					<pp-chart type="column" :chartData="sleepChartData" :opts="sleepChartOpts" :height="220" />
 				</view>
 				<view class="empty-inline" v-else>还没有睡眠记录，从今晚开始吧</view>
 			</view>
@@ -160,10 +157,12 @@
 
 <script>
 import { useAppStore } from '@/store/index.js'
+import ppChart from '@/components/pp-chart/pp-chart.vue'
 import { feedIntervalHours, awakeWindowHours, getLastSleepEnd } from '@/utils/reminder.js'
 import { fmtTime, diffMinutes, startOfToday } from '@/utils/date.js'
 
 export default {
+	components: { ppChart },
 	data() {
 		return {
 			nowTick: Date.now(),
@@ -235,6 +234,39 @@ export default {
 			const hasAbnormal = recent.some((r) => ['稀水样', '血丝', '黏液', '绿色'].includes(r.trait))
 			if (hasAbnormal) return '近期出现异常性状，建议观察记录'
 			return ''
+		},
+		/** 睡眠周统计图表数据 */
+		sleepChartData() {
+			return {
+				categories: this.weekStats.map((d) => d.day),
+				series: [{
+					name: '睡眠时长',
+					data: this.weekStats.map((d) => (d.hours > 0 ? Number(d.hours.toFixed(1)) : 0))
+				}]
+			}
+		},
+		sleepChartOpts() {
+			return {
+				color: ['#8F77D9', '#FF8A65'],
+				padding: [15, 15, 0, 15],
+				dataLabel: false,
+				xAxis: { disableGrid: true },
+				yAxis: {
+					gridType: 'dash',
+					dashLength: 2,
+					data: { min: 0, max: 15, title: '小时' }
+				},
+				legend: { show: false },
+				extra: {
+					column: {
+						type: 'group',
+						width: 24,
+						activeBgColor: '#000000',
+						activeBgOpacity: 0.08,
+						linearIndex: 1
+					}
+				}
+			}
 		}
 	},
 	watch: {
@@ -475,42 +507,9 @@ export default {
 		color: #3D3129;
 	}
 
-	.bars {
-		display: flex;
-		align-items: flex-end;
-		height: 200rpx;
-		padding: 24rpx 8rpx 0;
-	}
-
-	.bar {
-		flex: 1;
-		background: linear-gradient(180deg, #B8A6E8, #8F77D9);
-		border-radius: 14rpx 14rpx 6rpx 6rpx;
-		position: relative;
-		margin: 0 10rpx;
-		min-height: 6rpx;
-	}
-
-	.bar:last-child {
-		background: linear-gradient(180deg, #FFB59A, #FF8A65);
-	}
-
-	.bar-label {
-		position: absolute;
-		bottom: -40rpx;
-		left: 50%;
-		transform: translateX(-50%);
-		font-size: 20rpx;
-		color: #A0938A;
-	}
-
-	.bar-val {
-		position: absolute;
-		top: -32rpx;
-		left: 50%;
-		transform: translateX(-50%);
-		font-size: 18rpx;
-		color: #B5A79C;
+	.chart-box {
+		width: 100%;
+		padding-top: 8rpx;
 	}
 
 	.empty-inline {

@@ -5,10 +5,12 @@
 
 const KEYS = {
 	baby: 'pp_baby',
+	user: 'pp_user',
 	sleep: 'pp_sleep_records',
 	feeding: 'pp_feeding_records',
 	stool: 'pp_stool_records',
-	checkupStates: 'pp_checkup_states'
+	checkupStates: 'pp_checkup_states',
+	growth: 'pp_growth_records'
 }
 
 export function load(key, defaultValue) {

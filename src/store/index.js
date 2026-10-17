@@ -9,11 +9,19 @@ import { genId, nowTs, diffMinutes, startOfToday, isToday } from '@/utils/date.j
  */
 export const useAppStore = defineStore('app', {
 	state: () => ({
+		// 首次引导是否已完成（未完成时强制进入引导页）
+		initialized: false,
+		// 当前用户角色：mom | dad
+		user: {
+			role: ''
+		},
 		// 当前宝宝档案
 		baby: {
 			name: '小糯米',
 			gender: '男',
 			birthday: '2026-05-01',
+			birthWeight: '',
+			birthHeight: '',
 			ageText: ''
 		},
 		// 记录页当前分段：sleep | feed | stool
@@ -22,8 +30,10 @@ export const useAppStore = defineStore('app', {
 		sleepRecords: [],
 		feedingRecords: [],
 		stoolRecords: [],
-		// 体检状态 { [stageKey]: { status, date, note } }
+		// 体检状态 { [stageKey]: { status, date, note, result } }
 		checkupStates: {},
+		// 成长记录（体检时录入的身长/体重/头围）
+		growthRecords: [],
 		// 母乳计时器 { running, startTs, side }
 		feedingTimer: { running: false, startTs: null, side: 'left' },
 		// 进行中的睡眠记录 { startTs } | null
@@ -83,11 +93,24 @@ export const useAppStore = defineStore('app', {
 			if (this.loaded) return
 			const baby = load('baby', null)
 			if (baby) this.baby = { ...this.baby, ...baby }
+			const user = load('user', null)
+			if (user) this.user = { ...this.user, ...user }
 			this.sleepRecords = load('sleep', [])
 			this.feedingRecords = load('feeding', [])
 			this.stoolRecords = load('stool', [])
 			this.checkupStates = load('checkupStates', {})
+			this.growthRecords = load('growth', [])
+			this.initialized = !!user && !!baby && !!baby.birthday
 			this.loaded = true
+		},
+
+		/** 完成首次引导：写入角色与宝宝档案 */
+		completeOnboarding({ role, baby }) {
+			this.user = { role }
+			save('user', this.user)
+			this.baby = { ...this.baby, ...baby }
+			save('baby', this.baby)
+			this.initialized = true
 		},
 
 		/** 更新宝宝档案 */
@@ -187,6 +210,31 @@ export const useAppStore = defineStore('app', {
 			delete states[stageKey]
 			this.checkupStates = states
 			save('checkupStates', this.checkupStates)
+		},
+		/** 完成体检并归档结果（有测量数据时同步写入成长记录） */
+		finishCheckup(stageKey, result) {
+			const r = result || {}
+			const hasData = (r.height && Number(r.height) > 0) || (r.weight && Number(r.weight) > 0) || (r.headCircumference && Number(r.headCircumference) > 0)
+			this.setCheckupState(stageKey, {
+				status: 'done',
+				date: r.date || new Date().toISOString().slice(0, 10),
+				note: r.note || '',
+				result: hasData ? {
+					height: Number(r.height) || 0,
+					weight: Number(r.weight) || 0,
+					headCircumference: Number(r.headCircumference) || 0
+				} : null
+			})
+			if (hasData) {
+				this.growthRecords = [...this.growthRecords, {
+					id: genId(),
+					date: r.date || new Date().toISOString().slice(0, 10),
+					height: Number(r.height) || 0,
+					weight: Number(r.weight) || 0,
+					headCircumference: Number(r.headCircumference) || 0
+				}].sort((a, b) => (a.date < b.date ? -1 : 1))
+				save('growth', this.growthRecords)
+			}
 		},
 
 		// ---------- 通用 ----------

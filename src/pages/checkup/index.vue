@@ -14,7 +14,29 @@
 			</view>
 			<view class="btn-primary" @click="toggleScope">{{ showScope ? '收起检查项目' : `查看本次检查项目（${next.items.length} 项）` }}</view>
 			<view class="btn-outline" v-if="!nextState || nextState.status !== 'booked'" @click="markBooked">标记为已预约</view>
-			<view class="btn-outline done" v-else @click="markDone(next.key)">本次已完成</view>
+			<view class="btn-outline record" @click="toggleResultForm">{{ showResultForm ? '收起结果录入' : '记录本次体检结果' }}</view>
+			<view class="btn-outline done" v-if="nextState && nextState.status === 'booked'" @click="markDone(next.key)">本次已完成（不录入数据）</view>
+
+			<!-- 体检结果录入 -->
+			<view class="result-form" v-if="showResultForm">
+				<view class="detail-title">录入本次测量数据（选填，至少填一项）</view>
+				<view class="field">
+					<text class="field-label">身长</text>
+					<input class="field-input" type="digit" v-model="resultForm.height" placeholder="cm" maxlength="5" />
+					<text class="field-unit">cm</text>
+				</view>
+				<view class="field">
+					<text class="field-label">体重</text>
+					<input class="field-input" type="digit" v-model="resultForm.weight" placeholder="kg" maxlength="5" />
+					<text class="field-unit">kg</text>
+				</view>
+				<view class="field">
+					<text class="field-label">头围</text>
+					<input class="field-input" type="digit" v-model="resultForm.headCircumference" placeholder="cm" maxlength="5" />
+					<text class="field-unit">cm</text>
+				</view>
+				<view class="btn-primary save" @click="saveResult">保存并标记完成</view>
+			</view>
 
 			<!-- 检查项目详情 -->
 			<view class="scope-detail" v-if="showScope">
@@ -32,14 +54,14 @@
 			<view class="empty-text">0-3 岁体检计划已全部完成</view>
 		</view>
 
-		<!-- 成长曲线（图表库接入点） -->
+		<!-- 成长曲线（ucharts） -->
 		<view class="card">
-			<view class="sec-title">成长曲线 · 体重</view>
-			<view class="chart-placeholder">
-				<text class="chart-emoji">📈</text>
-				<text class="chart-tip">ucharts 成长曲线接入点</text>
+			<view class="sec-title">成长曲线 · 体重（kg）</view>
+			<view class="chart-box" v-if="growth.hasData">
+				<pp-chart type="line" :chartData="growthChartData" :opts="growthChartOpts" :height="280" />
 			</view>
-			<view class="chart-desc">在体检结果中记录身长体重后绘制</view>
+			<view class="empty-inline" v-else>录入至少两次体检体重后，这里会绘制成长曲线</view>
+			<view class="chart-desc" v-if="growth.hasData">实线为宝宝体重，虚线为 WHO 参考（P50 / P3 近似值）</view>
 		</view>
 
 		<!-- 体检时间轴 -->
@@ -59,11 +81,16 @@
 
 <script>
 import { useAppStore } from '@/store/index.js'
+import ppChart from '@/components/pp-chart/pp-chart.vue'
+import { buildGrowthSeries } from '@/utils/growth.js'
 
 export default {
+	components: { ppChart },
 	data() {
 		return {
-			showScope: false
+			showScope: false,
+			showResultForm: false,
+			resultForm: { height: '', weight: '', headCircumference: '' }
 		}
 	},
 	computed: {
@@ -78,6 +105,42 @@ export default {
 		},
 		nextState() {
 			return this.next ? this.appStore.checkupStates[this.next.key] : null
+		},
+		growth() {
+			return buildGrowthSeries(this.appStore.baby, this.appStore.growthRecords)
+		},
+		growthChartData() {
+			return {
+				categories: this.growth.categories,
+				series: [
+					{ name: '宝宝体重', data: this.growth.baby },
+					{ name: 'P50 参考', data: this.growth.p50 },
+					{ name: 'P3 参考', data: this.growth.p3 }
+				]
+			}
+		},
+		growthChartOpts() {
+			return {
+				color: ['#FF8A65', '#B8A6E8', '#D8CCC2'],
+				padding: [15, 15, 0, 15],
+				dataLabel: false,
+				xAxis: { disableGrid: true },
+				yAxis: {
+					gridType: 'dash',
+					dashLength: 2,
+					data: { title: 'kg' }
+				},
+				legend: { show: true, position: 'bottom', lineHeight: 20 },
+				extra: {
+					line: {
+						type: 'straight',
+						width: 2,
+						activeType: 'hollow',
+						linearIndex: 1,
+						dashType: [undefined, 'dash', 'dash']
+					}
+				}
+			}
 		}
 	},
 	onShow() {
@@ -105,6 +168,22 @@ export default {
 		markDone(key) {
 			this.appStore.setCheckupState(key, { status: 'done', date: new Date().toISOString().slice(0, 10), note: '' })
 			uni.showToast({ title: '已完成', icon: 'success' })
+		},
+		toggleResultForm() {
+			this.showResultForm = !this.showResultForm
+		},
+		saveResult() {
+			if (!this.next) return
+			const f = this.resultForm
+			const hasData = (f.height && Number(f.height) > 0) || (f.weight && Number(f.weight) > 0) || (f.headCircumference && Number(f.headCircumference) > 0)
+			if (!hasData) {
+				uni.showToast({ title: '请至少填写一项测量数据', icon: 'none' })
+				return
+			}
+			this.appStore.finishCheckup(this.next.key, { ...f })
+			this.resultForm = { height: '', weight: '', headCircumference: '' }
+			this.showResultForm = false
+			uni.showToast({ title: '已归档体检结果', icon: 'success' })
 		},
 		openStageActions(s) {
 			const st = this.appStore.checkupStates[s.key]
@@ -288,29 +367,59 @@ export default {
 		margin-top: 12rpx;
 	}
 
-	.chart-placeholder {
-		height: 220rpx;
-		background: #FAF6F0;
-		border-radius: 24rpx;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
+	.chart-box {
+		width: 100%;
+		padding-top: 8rpx;
 	}
 
-	.chart-emoji {
-		font-size: 56rpx;
-	}
-
-	.chart-tip {
+	.empty-inline {
 		font-size: 24rpx;
-		color: #B5A79C;
-		margin-top: 8rpx;
+		color: #C9BCB2;
+		text-align: center;
+		padding: 32rpx 0;
 	}
 
 	.chart-desc {
+		font-size: 22rpx;
+		color: #8A7C71;
+		margin-top: 12rpx;
+	}
+
+	/* 结果录入表单 */
+	.result-form {
+		background: rgba(255, 255, 255, 0.85);
+		border-radius: 24rpx;
+		padding: 24rpx 28rpx 8rpx;
+		margin-top: 24rpx;
+	}
+
+	.field {
+		display: flex;
+		align-items: center;
+		padding: 12rpx 0;
+	}
+
+	.field-label {
+		width: 130rpx;
+		font-size: 26rpx;
+		color: #8A7C71;
+	}
+
+	.field-input {
+		flex: 1;
+		background: #FAF6F0;
+		border-radius: 16rpx;
+		padding: 16rpx 24rpx;
+		font-size: 28rpx;
+	}
+
+	.field-unit {
 		font-size: 24rpx;
 		color: #8A7C71;
+		margin-left: 16rpx;
+	}
+
+	.btn-primary.save {
 		margin-top: 16rpx;
 	}
 
